@@ -1,0 +1,18 @@
+{
+  "name": "ss",
+  "module": "index.ts",
+  "type": "module",
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/moo": "^0.5.10"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "@elysiajs/static": "^1.4.10",
+    "elysia": "^1.4.29",
+    "moo": "^0.5.3",
+    "tokenizer": "^1.1.2"
+  }
+}
