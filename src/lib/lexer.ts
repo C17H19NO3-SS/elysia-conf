@@ -11,6 +11,9 @@ export const lexer = moo.states({
         // Yapısal Karakterler
         lbrace: '{',
         rbrace: '}',
+        lbracket: '[',
+        rbracket: ']',
+        comma: ',',
         assign: '=',
 
         // Veri Tipleri
