@@ -8,6 +8,12 @@ export function parseConfig(sourceText: string): any {
     let currentBlock: any = null;
     let currentBlockName = '';
 
+    const checkPollution = (key: string) => {
+        if (key === '__proto__' || key === 'constructor' || key === 'prototype') {
+            throw new Error('Malicious configuration property detected');
+        }
+    };
+
     // ws (boşluk) ve comment (yorum) token'larını filtreleyen bir helper generator
     const tokenStream = (function* () {
         for (const token of lexer) {
@@ -28,6 +34,8 @@ export function parseConfig(sourceText: string): any {
 
             if (next.done) break;
             const nextToken = next.value;
+
+            checkPollution(key);
 
             // Durum 1: Değer Ataması (key = value)
             if (nextToken.type === 'assign') {
@@ -83,6 +91,7 @@ export function parseConfig(sourceText: string): any {
         // Sayı ile başlayan bloklar için hata ayıklama (errors { 404 = "..." })
         else if (token.type === 'number') {
             const key = token.value.toString();
+            checkPollution(key);
             next = tokenStream.next();
 
             if (next.done) break;
