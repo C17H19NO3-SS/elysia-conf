@@ -82,17 +82,17 @@ export function elysiaCustomStatic(configText: string) {
                 if (config.logger.file) {
                     try {
                         const safeLogFile = safeJoin(process.cwd(), config.logger.file);
-                        Bun.write(Bun.file(safeLogFile) as any, logData, { append: true }).catch((err: any) => {
+                        Bun.write(safeLogFile, logData, { append: true }).catch((err) => {
                             console.error('Log file write error:', err);
                         });
                     } catch (err) {
-                        console.error('Path traversal detected in logger configuration');
+                        console.error('Path traversal detected in logger configuration:', err);
                     }
                 } else {
                     console.log(logData.trim());
                 }
             }
-        }) as any;
+        });
     }
 
     // Static Assets & MIME Types
@@ -103,7 +103,7 @@ export function elysiaCustomStatic(configText: string) {
                 // Determine a safe absolute path for assets within the current working directory
                 safeAssets = safeJoin(process.cwd(), config.static.dir);
             } catch (err) {
-                console.error('Path traversal detected in static configuration, falling back to public');
+                console.error('Path traversal detected in static configuration, falling back to public:', err);
                 safeAssets = join(process.cwd(), 'public');
             }
         } else {
@@ -115,11 +115,9 @@ export function elysiaCustomStatic(configText: string) {
                 assets: safeAssets,
                 prefix: config.static?.route || '/static',
                 alwaysStatic: config.env === 'production',
-                // remove noCache if the types say it's invalid for this version of the plugin, but let's keep cache logic if exists?
-                // actually Elysia Static Plugin options might have removed noCache. Let's cast to any to be safe on typings
-                ...(config.static?.cache === false ? { noCache: true } : {})
-            } as any)
-        ) as any;
+                noCache: !config.static?.cache,
+            })
+        );
 
         // Elysia's static plugin doesn't have a direct way to inject custom mimes elegantly,
         // so we can intercept specific requests if needed, but Bun handles most out of the box.
@@ -206,7 +204,7 @@ export function elysiaCustomStatic(configText: string) {
                     // fallback safely
                 }
             }
-        }) as any;
+        });
     }
 
     return app;
