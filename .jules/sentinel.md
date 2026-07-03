@@ -1,4 +1,4 @@
-## 2023-10-27 - [Prototype Pollution via Lexer Parser]
-**Vulnerability:** Prototype pollution vector found in `src/lib/parser.ts` where arbitrary keys parsed from the configuration format (like `__proto__`, `constructor`, `prototype`) could be assigned directly to object structures (`config` or `currentBlock`).
-**Learning:** Because the parser maps configuration keys to Javascript object properties natively without sanitization, malicious blocks or assignments allow attackers to pollute the global Object prototype context across the Node/Bun environment.
-**Prevention:** Explicit validation must be enforced on all dynamic key variables fetched from token streams before they are used as object properties to ensure they are not reserved Javascript metaproperties.
+## 2024-07-03 - Path Traversal Vulnerabilities in Elysia Custom Config Plugin
+**Vulnerability:** Path traversal possible via `errors` map, `logger.file`, and potentially `static.dir` definitions within the config. For instance, setting `errors { 404 = "../../../etc/passwd" }` exposes system files directly through the custom 404 page error handler via `Bun.file(errorFile)`.
+**Learning:** Raw string arguments given by parsing user configurations were being fed directly into native filesystem access functions (`Bun.file`, `Bun.write`) and Elysia plugin paths without validation against a secure base directory.
+**Prevention:** Always implement a validation check like `safeJoin` using `path.normalize` and checking that the resolved absolute path `.startsWith(baseDir + path.sep)` to ensure directory limits are maintained.

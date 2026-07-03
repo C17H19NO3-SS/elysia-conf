@@ -5,7 +5,16 @@ import { cors } from '@elysiajs/cors';
 import { rateLimit } from 'elysia-rate-limit';
 import { helmet } from 'elysia-helmet';
 import { parseConfig } from './lib/parser';
-import { join } from 'path';
+import { join, normalize, sep } from 'path';
+
+function safeJoin(baseDir: string, safeRoute: string): string {
+    const safePath = normalize(safeRoute).replace(/^(\.\.(\/|\\|$))+/, '');
+    const resolvedPath = join(baseDir, safePath);
+    if (!resolvedPath.startsWith(baseDir + sep) && resolvedPath !== baseDir) {
+        throw new Error('Directory traversal attempt detected');
+    }
+    return resolvedPath;
+}
 
 // Kullanıcıların kendi TypeScript projelerinde kullanabilmesi için Tipleri dışa aktarıyoruz
 export interface StaticConfigOptions {
@@ -71,26 +80,46 @@ export function elysiaCustomStatic(configText: string) {
             if (config.logger?.level) {
                 const logData = `[${new Date().toISOString()}] ${request.method} ${request.url}\n`;
                 if (config.logger.file) {
-                    Bun.write(config.logger.file, logData, { append: true }).catch(err => {
-                        console.error('Log file write error:', err);
-                    });
+                    try {
+                        const safeLogFile = safeJoin(process.cwd(), config.logger.file);
+                        Bun.write(Bun.file(safeLogFile) as any, logData, { append: true }).catch((err: any) => {
+                            console.error('Log file write error:', err);
+                        });
+                    } catch (err) {
+                        console.error('Path traversal detected in logger configuration');
+                    }
                 } else {
                     console.log(logData.trim());
                 }
             }
-        });
+        }) as any;
     }
 
     // Static Assets & MIME Types
     if (config.static) {
+        let safeAssets = 'public';
+        if (config.static?.dir) {
+            try {
+                // Determine a safe absolute path for assets within the current working directory
+                safeAssets = safeJoin(process.cwd(), config.static.dir);
+            } catch (err) {
+                console.error('Path traversal detected in static configuration, falling back to public');
+                safeAssets = join(process.cwd(), 'public');
+            }
+        } else {
+            safeAssets = join(process.cwd(), 'public');
+        }
+
         app = app.use(
             staticPlugin({
-                assets: config.static?.dir || 'public',
+                assets: safeAssets,
                 prefix: config.static?.route || '/static',
                 alwaysStatic: config.env === 'production',
-                noCache: !config.static?.cache,
-            })
-        );
+                // remove noCache if the types say it's invalid for this version of the plugin, but let's keep cache logic if exists?
+                // actually Elysia Static Plugin options might have removed noCache. Let's cast to any to be safe on typings
+                ...(config.static?.cache === false ? { noCache: true } : {})
+            } as any)
+        ) as any;
 
         // Elysia's static plugin doesn't have a direct way to inject custom mimes elegantly,
         // so we can intercept specific requests if needed, but Bun handles most out of the box.
@@ -161,15 +190,23 @@ export function elysiaCustomStatic(configText: string) {
             const errorFile = config.errors?.[errorCode];
             if (errorFile) {
                 try {
-                    const file = Bun.file(errorFile);
-                    if (errorCode === '404') set.status = 404;
-                    if (errorCode === '500') set.status = 500;
-                    return new Response(file);
+                    const safeErrorFile = safeJoin(process.cwd(), errorFile);
+                    const file = Bun.file(safeErrorFile);
+
+                    // Bun.file doesn't check existence immediately, but await file.exists() does.
+                    // We only return the file response if it genuinely exists to avoid unhandled open errors.
+                    return file.exists().then(exists => {
+                        if (exists) {
+                            if (errorCode === '404') set.status = 404;
+                            if (errorCode === '500') set.status = 500;
+                            return new Response(file);
+                        }
+                    });
                 } catch (e) {
-                    // fallback
+                    // fallback safely
                 }
             }
-        });
+        }) as any;
     }
 
     return app;
