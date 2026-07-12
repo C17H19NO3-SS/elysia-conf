@@ -18,7 +18,8 @@ export const lexer = moo.states({
 
         // Veri Tipleri
         number: { match: /[0-9]+/, cast: Number },
-        string: { match: /"(?:\\["\\]|[^\n"\\])*"/, value: s => s.slice(1, -1) }, // Tırnakları otomatik temizler
+        // 🛡️ Sentinel: ReDoS prevented by avoiding overlapping quantifiers with optimized regex while maintaining semantics
+        string: { match: /"[^\n"\\]*(?:\\["\\][^\n"\\]*)*"/, value: s => s.slice(1, -1) }, // Tırnakları otomatik temizler
 
         // Kelimeler (true, false veya port, static gibi anahtarlar)
         identifier: {
