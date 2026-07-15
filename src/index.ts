@@ -5,7 +5,16 @@ import { cors } from '@elysiajs/cors';
 import { rateLimit } from 'elysia-rate-limit';
 import { helmet } from 'elysia-helmet';
 import { parseConfig } from './lib/parser';
-import { join } from 'path';
+import { join, normalize, sep, resolve } from 'path';
+
+function safeJoin(baseDir: string, safeRoute: string): string {
+    // Resolve calculates the absolute path. This handles both '..' traversal and absolute path injections.
+    const resolvedPath = resolve(baseDir, safeRoute);
+    if (!resolvedPath.startsWith(baseDir + sep) && resolvedPath !== baseDir) {
+        throw new Error('Directory traversal attempt detected');
+    }
+    return resolvedPath;
+}
 
 // Kullanıcıların kendi TypeScript projelerinde kullanabilmesi için Tipleri dışa aktarıyoruz
 export interface StaticConfigOptions {
@@ -161,12 +170,15 @@ export function elysiaCustomStatic(configText: string) {
             const errorFile = config.errors?.[errorCode];
             if (errorFile) {
                 try {
-                    const file = Bun.file(errorFile);
+                    // 🛡️ Sentinel: Preventing Path Traversal in error file serving
+                    const safeErrorFilePath = safeJoin(process.cwd(), errorFile);
+                    const file = Bun.file(safeErrorFilePath);
                     if (errorCode === '404') set.status = 404;
                     if (errorCode === '500') set.status = 500;
                     return new Response(file);
                 } catch (e) {
-                    // fallback
+                    // Fail securely - errors should not expose sensitive data
+                    console.error('Failed to load error file:', e);
                 }
             }
         });
