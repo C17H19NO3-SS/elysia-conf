@@ -18,7 +18,8 @@ export const lexer = moo.states({
 
         // Veri Tipleri
         number: { match: /[0-9]+/, cast: Number },
-        string: { match: /"(?:\\["\\]|[^\n"\\])*"/, value: s => s.slice(1, -1) }, // Tırnakları otomatik temizler
+        // [SECURITY] ReDoS vulnerability fix: Replaced `(?:\\["\\]|[^\n"\\])*` with `(?:\\.|[^"\n\\])*` to prevent catastrophic backtracking on malicious escape sequences
+        string: { match: /"(?:\\.|[^"\n\\])*"/, value: s => s.slice(1, -1) }, // Tırnakları otomatik temizler
 
         // Kelimeler (true, false veya port, static gibi anahtarlar)
         identifier: {
