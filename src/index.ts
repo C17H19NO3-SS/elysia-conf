@@ -5,7 +5,15 @@ import { cors } from '@elysiajs/cors';
 import { rateLimit } from 'elysia-rate-limit';
 import { helmet } from 'elysia-helmet';
 import { parseConfig } from './lib/parser';
-import { join } from 'path';
+import { join, resolve, sep } from 'path';
+
+function resolvePathSafely(baseDir: string, requestedPath: string): string {
+    const resolvedPath = resolve(baseDir, requestedPath);
+    if (!resolvedPath.startsWith(baseDir + sep) && resolvedPath !== baseDir) {
+        throw new Error('Directory traversal attempt detected');
+    }
+    return resolvedPath;
+}
 
 // Kullanıcıların kendi TypeScript projelerinde kullanabilmesi için Tipleri dışa aktarıyoruz
 export interface StaticConfigOptions {
@@ -67,11 +75,16 @@ export function elysiaCustomStatic(configText: string) {
 
     // Logger Plugin
     if (config.logger) {
+        let safeLogPath: string | undefined;
+        if (config.logger.file) {
+            // Validate the file path early and store it
+            safeLogPath = resolvePathSafely(process.cwd(), config.logger.file);
+        }
         app = app.onRequest(({ request }) => {
             if (config.logger?.level) {
                 const logData = `[${new Date().toISOString()}] ${request.method} ${request.url}\n`;
-                if (config.logger.file) {
-                    Bun.write(config.logger.file, logData, { append: true }).catch(err => {
+                if (safeLogPath) {
+                    Bun.write(safeLogPath, logData, { append: true }).catch(err => {
                         console.error('Log file write error:', err);
                     });
                 } else {
@@ -83,9 +96,13 @@ export function elysiaCustomStatic(configText: string) {
 
     // Static Assets & MIME Types
     if (config.static) {
+        const staticDir = config.static?.dir || 'public';
+        // Validate static directory path to prevent accessing arbitrary folders like /etc
+        const safeStaticDir = resolvePathSafely(process.cwd(), staticDir);
+
         app = app.use(
             staticPlugin({
-                assets: config.static?.dir || 'public',
+                assets: safeStaticDir,
                 prefix: config.static?.route || '/static',
                 alwaysStatic: config.env === 'production',
                 noCache: !config.static?.cache,
@@ -161,7 +178,8 @@ export function elysiaCustomStatic(configText: string) {
             const errorFile = config.errors?.[errorCode];
             if (errorFile) {
                 try {
-                    const file = Bun.file(errorFile);
+                    const safeErrorFilePath = resolvePathSafely(process.cwd(), errorFile);
+                    const file = Bun.file(safeErrorFilePath);
                     if (errorCode === '404') set.status = 404;
                     if (errorCode === '500') set.status = 500;
                     return new Response(file);
