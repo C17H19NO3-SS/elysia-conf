@@ -130,3 +130,14 @@ flags = [true, false, true]
         expect(result.flags).toEqual([true, false, true]);
     });
 });
+
+describe('Security Edge Cases', () => {
+    it('should prevent directory traversal on static dir', () => {
+        const badConfig = `
+static {
+    dir = "../../../etc"
+}
+        `;
+        expect(() => elysiaCustomStatic(badConfig)).toThrow('Directory traversal attempt detected');
+    });
+});

@@ -5,7 +5,18 @@ import { cors } from '@elysiajs/cors';
 import { rateLimit } from 'elysia-rate-limit';
 import { helmet } from 'elysia-helmet';
 import { parseConfig } from './lib/parser';
-import { join } from 'path';
+import { join, normalize, sep } from 'path';
+
+import { resolve } from 'path';
+
+function safeJoin(baseDir: string, safeRoute: string): string {
+    const resolvedBase = resolve(baseDir);
+    const resolvedPath = resolve(baseDir, safeRoute);
+    if (!resolvedPath.startsWith(resolvedBase + sep) && resolvedPath !== resolvedBase) {
+        throw new Error('Directory traversal attempt detected');
+    }
+    return resolvedPath;
+}
 
 // Kullanıcıların kendi TypeScript projelerinde kullanabilmesi için Tipleri dışa aktarıyoruz
 export interface StaticConfigOptions {
@@ -83,9 +94,13 @@ export function elysiaCustomStatic(configText: string) {
 
     // Static Assets & MIME Types
     if (config.static) {
+        // Prevent path traversal on static.dir by resolving securely relative to cwd
+        const rawDir = config.static?.dir || 'public';
+        const resolvedAssetsPath = safeJoin(process.cwd(), rawDir);
+
         app = app.use(
             staticPlugin({
-                assets: config.static?.dir || 'public',
+                assets: resolvedAssetsPath,
                 prefix: config.static?.route || '/static',
                 alwaysStatic: config.env === 'production',
                 noCache: !config.static?.cache,
