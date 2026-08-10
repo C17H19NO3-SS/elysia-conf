@@ -5,7 +5,17 @@ import { cors } from '@elysiajs/cors';
 import { rateLimit } from 'elysia-rate-limit';
 import { helmet } from 'elysia-helmet';
 import { parseConfig } from './lib/parser';
-import { join } from 'path';
+import { join, normalize, sep, isAbsolute } from 'path';
+
+// ✅ GOOD: Preventing Path Traversal in static file paths
+function safeJoin(baseDir: string, safeRoute: string): string {
+  // If absolute path provided in config, ensure it's within baseDir, otherwise normalize relative paths
+  const resolvedPath = isAbsolute(safeRoute) ? normalize(safeRoute) : join(baseDir, normalize(safeRoute));
+  if (!resolvedPath.startsWith(baseDir + sep) && resolvedPath !== baseDir) {
+    throw new Error('Directory traversal attempt detected');
+  }
+  return resolvedPath;
+}
 
 // Kullanıcıların kendi TypeScript projelerinde kullanabilmesi için Tipleri dışa aktarıyoruz
 export interface StaticConfigOptions {
@@ -161,7 +171,9 @@ export function elysiaCustomStatic(configText: string) {
             const errorFile = config.errors?.[errorCode];
             if (errorFile) {
                 try {
-                    const file = Bun.file(errorFile);
+                    // Ensure the error file cannot traverse out of cwd
+                    const safePath = safeJoin(process.cwd(), errorFile);
+                    const file = Bun.file(safePath);
                     if (errorCode === '404') set.status = 404;
                     if (errorCode === '500') set.status = 500;
                     return new Response(file);
