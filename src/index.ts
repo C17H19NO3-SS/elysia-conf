@@ -87,7 +87,7 @@ export function elysiaCustomStatic(configText: string) {
                             console.error('Log file write error:', err);
                         });
                     } catch (e) {
-                        console.error('Log file path traversal attempt prevented.');
+                        console.error('Log file path traversal attempt prevented.', e);
                     }
                 } else {
                     console.log(logData.trim());
