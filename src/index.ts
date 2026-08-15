@@ -5,7 +5,7 @@ import { cors } from '@elysiajs/cors';
 import { rateLimit } from 'elysia-rate-limit';
 import { helmet } from 'elysia-helmet';
 import { parseConfig } from './lib/parser';
-import { join } from 'path';
+import { join, resolve, sep } from 'path';
 
 // Kullanıcıların kendi TypeScript projelerinde kullanabilmesi için Tipleri dışa aktarıyoruz
 export interface StaticConfigOptions {
@@ -161,7 +161,14 @@ export function elysiaCustomStatic(configText: string) {
             const errorFile = config.errors?.[errorCode];
             if (errorFile) {
                 try {
-                    const file = Bun.file(errorFile);
+                    // Prevent Path Traversal in static error files
+                    const baseDir = process.cwd();
+                    const resolvedPath = resolve(baseDir, errorFile);
+                    if (!resolvedPath.startsWith(baseDir + sep) && resolvedPath !== baseDir) {
+                        throw new Error('Directory traversal attempt detected');
+                    }
+
+                    const file = Bun.file(resolvedPath);
                     if (errorCode === '404') set.status = 404;
                     if (errorCode === '500') set.status = 500;
                     return new Response(file);
