@@ -5,7 +5,16 @@ import { cors } from '@elysiajs/cors';
 import { rateLimit } from 'elysia-rate-limit';
 import { helmet } from 'elysia-helmet';
 import { parseConfig } from './lib/parser';
-import { join } from 'path';
+import { join, normalize, sep } from 'path';
+
+function safeJoin(baseDir: string, safeRoute: string): string {
+    const safePath = normalize(safeRoute).replace(/^(\.\.(\/|\\|$))+/, '');
+    const resolvedPath = join(baseDir, safePath);
+    if (!resolvedPath.startsWith(baseDir + sep) && resolvedPath !== baseDir) {
+        throw new Error('Directory traversal attempt detected');
+    }
+    return resolvedPath;
+}
 
 // Kullanıcıların kendi TypeScript projelerinde kullanabilmesi için Tipleri dışa aktarıyoruz
 export interface StaticConfigOptions {
@@ -71,9 +80,15 @@ export function elysiaCustomStatic(configText: string) {
             if (config.logger?.level) {
                 const logData = `[${new Date().toISOString()}] ${request.method} ${request.url}\n`;
                 if (config.logger.file) {
-                    Bun.write(config.logger.file, logData, { append: true }).catch(err => {
-                        console.error('Log file write error:', err);
-                    });
+                    try {
+                        // Security Fix: Prevent Path Traversal in logger output path
+                        const logFilePath = safeJoin(process.cwd(), config.logger.file);
+                        Bun.write(Bun.file(logFilePath), logData, { append: true }).catch(err => {
+                            console.error('Log file write error:', err);
+                        });
+                    } catch (err) {
+                        console.error('Invalid log file path configuration', err);
+                    }
                 } else {
                     console.log(logData.trim());
                 }
@@ -161,7 +176,9 @@ export function elysiaCustomStatic(configText: string) {
             const errorFile = config.errors?.[errorCode];
             if (errorFile) {
                 try {
-                    const file = Bun.file(errorFile);
+                    // Security Fix: Prevent Path Traversal in error files
+                    const resolvedPath = safeJoin(process.cwd(), errorFile);
+                    const file = Bun.file(resolvedPath);
                     if (errorCode === '404') set.status = 404;
                     if (errorCode === '500') set.status = 500;
                     return new Response(file);
