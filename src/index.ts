@@ -84,8 +84,7 @@ export function elysiaCustomStatic(configText: string) {
                         // Security Fix: Prevent Path Traversal in logger output path
                         const logFilePath = safeJoin(process.cwd(), config.logger.file);
                         const fileTarget = Bun.file(logFilePath);
-                        // @ts-ignore
-                        Bun.write(fileTarget, logData, { append: true }).catch(err => {
+                        Bun.write(logFilePath, logData).catch(err => {
                             console.error('Log file write error:', err);
                         });
                     } catch (err) {
