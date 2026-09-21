@@ -5,7 +5,16 @@ import { cors } from '@elysiajs/cors';
 import { rateLimit } from 'elysia-rate-limit';
 import { helmet } from 'elysia-helmet';
 import { parseConfig } from './lib/parser';
-import { join } from 'path';
+import { join, resolve, sep } from 'path';
+
+// Path traversal defense utility
+function resolveSafePath(baseDir: string, targetPath: string): string {
+    const resolvedPath = resolve(baseDir, targetPath);
+    if (!resolvedPath.startsWith(baseDir + sep) && resolvedPath !== baseDir) {
+        throw new Error('Directory traversal attempt detected: ' + targetPath);
+    }
+    return resolvedPath;
+}
 
 // Kullanıcıların kendi TypeScript projelerinde kullanabilmesi için Tipleri dışa aktarıyoruz
 export interface StaticConfigOptions {
@@ -67,13 +76,25 @@ export function elysiaCustomStatic(configText: string) {
 
     // Logger Plugin
     if (config.logger) {
+        let safeLogPath: string | undefined;
+        if (config.logger.file) {
+            try {
+                safeLogPath = resolveSafePath(process.cwd(), config.logger.file);
+            } catch (err) {
+                console.error('Security Error resolving logger path:', err);
+            }
+        }
+
         app = app.onRequest(({ request }) => {
             if (config.logger?.level) {
                 const logData = `[${new Date().toISOString()}] ${request.method} ${request.url}\n`;
-                if (config.logger.file) {
-                    Bun.write(config.logger.file, logData, { append: true }).catch(err => {
+                if (safeLogPath) {
+                    Bun.write(safeLogPath, logData, { append: true }).catch(err => {
                         console.error('Log file write error:', err);
                     });
+                } else if (config.logger.file) {
+                    // It had a file but it was blocked by security, so we fallback to console safely or do nothing
+                    console.error('Blocked log write due to path traversal attempt.');
                 } else {
                     console.log(logData.trim());
                 }
@@ -83,9 +104,16 @@ export function elysiaCustomStatic(configText: string) {
 
     // Static Assets & MIME Types
     if (config.static) {
+        let safeAssetsPath = resolve(process.cwd(), 'public');
+        try {
+            safeAssetsPath = resolveSafePath(process.cwd(), config.static?.dir || 'public');
+        } catch (err) {
+            console.error('Security Error in static dir:', err);
+        }
+
         app = app.use(
             staticPlugin({
-                assets: config.static?.dir || 'public',
+                assets: safeAssetsPath,
                 prefix: config.static?.route || '/static',
                 alwaysStatic: config.env === 'production',
                 noCache: !config.static?.cache,
@@ -161,12 +189,14 @@ export function elysiaCustomStatic(configText: string) {
             const errorFile = config.errors?.[errorCode];
             if (errorFile) {
                 try {
-                    const file = Bun.file(errorFile);
+                    const safeErrorFile = resolveSafePath(process.cwd(), errorFile);
+                    const file = Bun.file(safeErrorFile);
                     if (errorCode === '404') set.status = 404;
                     if (errorCode === '500') set.status = 500;
                     return new Response(file);
                 } catch (e) {
                     // fallback
+                    console.error('Security/File Error in error boundaries:', e);
                 }
             }
         });
