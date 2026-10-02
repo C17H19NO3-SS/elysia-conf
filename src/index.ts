@@ -5,7 +5,16 @@ import { cors } from '@elysiajs/cors';
 import { rateLimit } from 'elysia-rate-limit';
 import { helmet } from 'elysia-helmet';
 import { parseConfig } from './lib/parser';
-import { join } from 'path';
+import { join, resolve, sep } from 'path';
+
+function safeResolve(baseDir: string, targetPath: string): string {
+    const strippedRoute = String(targetPath).replace(/^([a-zA-Z]:\\|[\\\/])+/, '');
+    const resolvedPath = resolve(baseDir, strippedRoute);
+    if (!resolvedPath.startsWith(resolve(baseDir) + sep) && resolvedPath !== resolve(baseDir)) {
+        throw new Error('Directory traversal attempt detected');
+    }
+    return resolvedPath;
+}
 
 // Kullanıcıların kendi TypeScript projelerinde kullanabilmesi için Tipleri dışa aktarıyoruz
 export interface StaticConfigOptions {
@@ -71,9 +80,14 @@ export function elysiaCustomStatic(configText: string) {
             if (config.logger?.level) {
                 const logData = `[${new Date().toISOString()}] ${request.method} ${request.url}\n`;
                 if (config.logger.file) {
-                    Bun.write(config.logger.file, logData, { append: true }).catch(err => {
-                        console.error('Log file write error:', err);
-                    });
+                    try {
+                        const safeLogFile = safeResolve(process.cwd(), config.logger.file);
+                        Bun.write(safeLogFile, logData, { append: true }).catch(err => {
+                            console.error('Log file write error:', err);
+                        });
+                    } catch (err) {
+                        console.error('Security Error: Invalid log file path detected');
+                    }
                 } else {
                     console.log(logData.trim());
                 }
@@ -161,12 +175,13 @@ export function elysiaCustomStatic(configText: string) {
             const errorFile = config.errors?.[errorCode];
             if (errorFile) {
                 try {
-                    const file = Bun.file(errorFile);
+                    const safeErrorFile = safeResolve(process.cwd(), errorFile);
+                    const file = Bun.file(safeErrorFile);
                     if (errorCode === '404') set.status = 404;
                     if (errorCode === '500') set.status = 500;
                     return new Response(file);
                 } catch (e) {
-                    // fallback
+                    // fallback safely without exposing internal details
                 }
             }
         });
