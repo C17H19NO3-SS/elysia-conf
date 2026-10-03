@@ -5,7 +5,20 @@ import { cors } from '@elysiajs/cors';
 import { rateLimit } from 'elysia-rate-limit';
 import { helmet } from 'elysia-helmet';
 import { parseConfig } from './lib/parser';
-import { join } from 'path';
+import { join, normalize, sep } from 'path';
+
+export function safeJoin(baseDir: string, safeRoute: string): string {
+    // Strip absolute path prefixes (e.g., /, C:\)
+    const stripped = safeRoute.replace(/^([a-zA-Z]:[\\/]+|[\\/]+)/, '');
+    // Resolve relative to baseDir. `join` will automatically normalize `..`
+    const resolvedPath = join(baseDir, stripped);
+    // Ensure the resolved path is still within the baseDir
+    const safePrefix = baseDir === sep ? sep : baseDir + sep;
+    if (!resolvedPath.startsWith(safePrefix) && resolvedPath !== baseDir) {
+        throw new Error('Directory traversal attempt detected');
+    }
+    return resolvedPath;
+}
 
 // Kullanıcıların kendi TypeScript projelerinde kullanabilmesi için Tipleri dışa aktarıyoruz
 export interface StaticConfigOptions {
@@ -71,9 +84,14 @@ export function elysiaCustomStatic(configText: string) {
             if (config.logger?.level) {
                 const logData = `[${new Date().toISOString()}] ${request.method} ${request.url}\n`;
                 if (config.logger.file) {
-                    Bun.write(config.logger.file, logData, { append: true }).catch(err => {
-                        console.error('Log file write error:', err);
-                    });
+                    try {
+                        const safeFilePath = safeJoin(process.cwd(), config.logger.file);
+                        Bun.write(safeFilePath, logData, { append: true }).catch(err => {
+                            console.error('Log file write error:', err);
+                        });
+                    } catch (secErr) {
+                        console.error('Security error (path traversal detected on logger file):', secErr);
+                    }
                 } else {
                     console.log(logData.trim());
                 }
@@ -161,12 +179,14 @@ export function elysiaCustomStatic(configText: string) {
             const errorFile = config.errors?.[errorCode];
             if (errorFile) {
                 try {
-                    const file = Bun.file(errorFile);
+                    const safeFilePath = safeJoin(process.cwd(), errorFile);
+                    const file = Bun.file(safeFilePath);
                     if (errorCode === '404') set.status = 404;
                     if (errorCode === '500') set.status = 500;
                     return new Response(file);
                 } catch (e) {
                     // fallback
+                    console.error('Security/File error on error boundaries:', e);
                 }
             }
         });
