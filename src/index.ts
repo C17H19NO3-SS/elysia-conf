@@ -85,8 +85,8 @@ export function elysiaCustomStatic(configText: string) {
                         Bun.write(sPath, logData, { append: true }).catch(err => {
                             console.error('Log file write error:', err);
                         });
-                    } catch (e: any) {
-                        console.error('Security error: Log file path blocked', e.message);
+                    } catch (e) {
+                        console.error('Security error: Log file path blocked', e instanceof Error ? e.message : e);
                     }
                 } else {
                     console.log(logData.trim());
