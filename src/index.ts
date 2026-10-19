@@ -5,7 +5,20 @@ import { cors } from '@elysiajs/cors';
 import { rateLimit } from 'elysia-rate-limit';
 import { helmet } from 'elysia-helmet';
 import { parseConfig } from './lib/parser';
-import { join } from 'path';
+import { join, resolve, sep } from 'path';
+
+/**
+ * Validates and resolves a path to prevent Directory Traversal vulnerabilities.
+ * Secures runtime file outputs and error file resolutions.
+ */
+function getSafePath(userInput: string): string {
+    const baseDir = process.cwd();
+    const resolvedPath = resolve(baseDir, userInput);
+    if (!resolvedPath.startsWith(baseDir + sep) && resolvedPath !== baseDir) {
+        throw new Error('Directory traversal attempt detected');
+    }
+    return resolvedPath;
+}
 
 // Kullanıcıların kendi TypeScript projelerinde kullanabilmesi için Tipleri dışa aktarıyoruz
 export interface StaticConfigOptions {
@@ -67,6 +80,11 @@ export function elysiaCustomStatic(configText: string) {
 
     // Logger Plugin
     if (config.logger) {
+        // Sentinel: Prevent directory traversal on log file path
+        if (config.logger.file) {
+            config.logger.file = getSafePath(config.logger.file);
+        }
+
         app = app.onRequest(({ request }) => {
             if (config.logger?.level) {
                 const logData = `[${new Date().toISOString()}] ${request.method} ${request.url}\n`;
@@ -156,6 +174,13 @@ export function elysiaCustomStatic(configText: string) {
 
     // Error Boundaries
     if (config.errors) {
+        // Sentinel: Prevent directory traversal on error boundaries
+        for (const [key, value] of Object.entries(config.errors)) {
+            if (typeof value === 'string') {
+                config.errors[key] = getSafePath(value);
+            }
+        }
+
         app = app.onError(({ code, set }) => {
             const errorCode = code === 'NOT_FOUND' ? '404' : '500';
             const errorFile = config.errors?.[errorCode];
