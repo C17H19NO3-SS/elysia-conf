@@ -5,7 +5,7 @@ import { cors } from '@elysiajs/cors';
 import { rateLimit } from 'elysia-rate-limit';
 import { helmet } from 'elysia-helmet';
 import { parseConfig } from './lib/parser';
-import { join } from 'path';
+import { join, resolve, normalize, sep } from 'path';
 
 // Kullanıcıların kendi TypeScript projelerinde kullanabilmesi için Tipleri dışa aktarıyoruz
 export interface StaticConfigOptions {
@@ -61,6 +61,28 @@ export function loadConfig(configText: string): ServerConfig {
  */
 export function elysiaCustomStatic(configText: string) {
     const config: ServerConfig = parseConfig(configText);
+
+    // Path sanitization helper
+    const baseDir = process.cwd();
+    const safeJoin = (userInput: string): string => {
+        const resolvedPath = resolve(baseDir, userInput);
+        if (!resolvedPath.startsWith(baseDir + sep) && resolvedPath !== baseDir) {
+            throw new Error('Directory traversal attempt detected');
+        }
+        return resolvedPath;
+    };
+
+    if (config.logger?.file) {
+        config.logger.file = safeJoin(config.logger.file);
+    }
+    if (config.static?.dir) {
+        config.static.dir = safeJoin(config.static.dir);
+    }
+    if (config.errors) {
+        for (const [code, file] of Object.entries(config.errors)) {
+            config.errors[code] = safeJoin(file);
+        }
+    }
 
     let app = new Elysia({ name: 'elysia-custom-config' })
         .decorate('serverConfig', config);
