@@ -5,7 +5,16 @@ import { cors } from '@elysiajs/cors';
 import { rateLimit } from 'elysia-rate-limit';
 import { helmet } from 'elysia-helmet';
 import { parseConfig } from './lib/parser';
-import { join } from 'path';
+import { join, resolve, sep } from 'path';
+
+function getSafePath(userInput: string): string {
+    const baseDir = process.cwd();
+    const resolvedPath = resolve(baseDir, userInput);
+    if (!resolvedPath.startsWith(baseDir + sep) && resolvedPath !== baseDir) {
+        throw new Error('Directory traversal attempt detected');
+    }
+    return resolvedPath;
+}
 
 // Kullanıcıların kendi TypeScript projelerinde kullanabilmesi için Tipleri dışa aktarıyoruz
 export interface StaticConfigOptions {
@@ -67,6 +76,9 @@ export function elysiaCustomStatic(configText: string) {
 
     // Logger Plugin
     if (config.logger) {
+        if (config.logger.file) {
+            config.logger.file = getSafePath(config.logger.file);
+        }
         app = app.onRequest(({ request }) => {
             if (config.logger?.level) {
                 const logData = `[${new Date().toISOString()}] ${request.method} ${request.url}\n`;
@@ -85,7 +97,7 @@ export function elysiaCustomStatic(configText: string) {
     if (config.static) {
         app = app.use(
             staticPlugin({
-                assets: config.static?.dir || 'public',
+                assets: getSafePath(config.static?.dir || 'public'),
                 prefix: config.static?.route || '/static',
                 alwaysStatic: config.env === 'production',
                 noCache: !config.static?.cache,
@@ -161,7 +173,8 @@ export function elysiaCustomStatic(configText: string) {
             const errorFile = config.errors?.[errorCode];
             if (errorFile) {
                 try {
-                    const file = Bun.file(errorFile);
+                    const safeErrorFile = getSafePath(errorFile);
+                    const file = Bun.file(safeErrorFile);
                     if (errorCode === '404') set.status = 404;
                     if (errorCode === '500') set.status = 500;
                     return new Response(file);
