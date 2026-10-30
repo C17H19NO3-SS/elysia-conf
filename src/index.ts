@@ -6,6 +6,7 @@ import { rateLimit } from 'elysia-rate-limit';
 import { helmet } from 'elysia-helmet';
 import { parseConfig } from './lib/parser';
 import { join } from 'path';
+import { safeJoin } from './lib/pathUtils';
 
 // Kullanıcıların kendi TypeScript projelerinde kullanabilmesi için Tipleri dışa aktarıyoruz
 export interface StaticConfigOptions {
@@ -71,9 +72,14 @@ export function elysiaCustomStatic(configText: string) {
             if (config.logger?.level) {
                 const logData = `[${new Date().toISOString()}] ${request.method} ${request.url}\n`;
                 if (config.logger.file) {
-                    Bun.write(config.logger.file, logData, { append: true }).catch(err => {
-                        console.error('Log file write error:', err);
-                    });
+                    try {
+                        const safeLoggerPath = safeJoin(process.cwd(), config.logger.file);
+                        Bun.write(safeLoggerPath, logData, { append: true }).catch(err => {
+                            console.error('Log file write error:', err);
+                        });
+                    } catch (e) {
+                        console.error('Security error: Traversal detected in logger config');
+                    }
                 } else {
                     console.log(logData.trim());
                 }
@@ -161,7 +167,8 @@ export function elysiaCustomStatic(configText: string) {
             const errorFile = config.errors?.[errorCode];
             if (errorFile) {
                 try {
-                    const file = Bun.file(errorFile);
+                    const safeErrorFilePath = safeJoin(process.cwd(), errorFile);
+                    const file = Bun.file(safeErrorFilePath);
                     if (errorCode === '404') set.status = 404;
                     if (errorCode === '500') set.status = 500;
                     return new Response(file);
