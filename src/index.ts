@@ -5,7 +5,7 @@ import { cors } from '@elysiajs/cors';
 import { rateLimit } from 'elysia-rate-limit';
 import { helmet } from 'elysia-helmet';
 import { parseConfig } from './lib/parser';
-import { join } from 'path';
+import { join, normalize, sep } from 'path';
 
 // Kullanıcıların kendi TypeScript projelerinde kullanabilmesi için Tipleri dışa aktarıyoruz
 export interface StaticConfigOptions {
@@ -47,6 +47,15 @@ export interface ServerConfig {
     [key: string]: any; // Diğer özel alanlar için esneklik
 }
 
+function safeJoin(baseDir: string, safeRoute: string): string {
+    const safePath = normalize(safeRoute).replace(/^(\.\.(\/|\\|$))+/, '');
+    const resolvedPath = join(baseDir, safePath);
+    if (!resolvedPath.startsWith(baseDir + sep) && resolvedPath !== baseDir) {
+        throw new Error('Directory traversal attempt detected');
+    }
+    return resolvedPath;
+}
+
 /**
  * server.config içeriğini parse ederek doğrudan Elysia uyumlu bir nesne döndürür
  * @param configText server.config dosyasının ham metin içeriği
@@ -71,7 +80,8 @@ export function elysiaCustomStatic(configText: string) {
             if (config.logger?.level) {
                 const logData = `[${new Date().toISOString()}] ${request.method} ${request.url}\n`;
                 if (config.logger.file) {
-                    Bun.write(config.logger.file, logData, { append: true }).catch(err => {
+                    const safeLogFile = safeJoin(process.cwd(), config.logger.file);
+                    Bun.write(safeLogFile, logData, { append: true }).catch(err => {
                         console.error('Log file write error:', err);
                     });
                 } else {
@@ -161,7 +171,8 @@ export function elysiaCustomStatic(configText: string) {
             const errorFile = config.errors?.[errorCode];
             if (errorFile) {
                 try {
-                    const file = Bun.file(errorFile);
+                    const safeErrorFile = safeJoin(process.cwd(), errorFile);
+                    const file = Bun.file(safeErrorFile);
                     if (errorCode === '404') set.status = 404;
                     if (errorCode === '500') set.status = 500;
                     return new Response(file);
