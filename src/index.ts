@@ -5,7 +5,7 @@ import { cors } from '@elysiajs/cors';
 import { rateLimit } from 'elysia-rate-limit';
 import { helmet } from 'elysia-helmet';
 import { parseConfig } from './lib/parser';
-import { join } from 'path';
+import { join, resolve, sep } from 'path';
 
 // Kullanıcıların kendi TypeScript projelerinde kullanabilmesi için Tipleri dışa aktarıyoruz
 export interface StaticConfigOptions {
@@ -71,7 +71,14 @@ export function elysiaCustomStatic(configText: string) {
             if (config.logger?.level) {
                 const logData = `[${new Date().toISOString()}] ${request.method} ${request.url}\n`;
                 if (config.logger.file) {
-                    Bun.write(config.logger.file, logData, { append: true }).catch(err => {
+                    // SEC-FIX: Prevent Path Traversal
+                    const baseDir = process.cwd();
+                    const resolvedPath = resolve(baseDir, config.logger.file);
+                    if (!resolvedPath.startsWith(baseDir + sep) && resolvedPath !== baseDir) {
+                        console.error('Directory traversal attempt detected in logger config');
+                        return;
+                    }
+                    Bun.write(resolvedPath, logData, { append: true }).catch(err => {
                         console.error('Log file write error:', err);
                     });
                 } else {
@@ -161,7 +168,14 @@ export function elysiaCustomStatic(configText: string) {
             const errorFile = config.errors?.[errorCode];
             if (errorFile) {
                 try {
-                    const file = Bun.file(errorFile);
+                    // SEC-FIX: Prevent Path Traversal
+                    const baseDir = process.cwd();
+                    const resolvedPath = resolve(baseDir, errorFile);
+                    if (!resolvedPath.startsWith(baseDir + sep) && resolvedPath !== baseDir) {
+                        console.error('Directory traversal attempt detected in error file config');
+                        return new Response('Internal Server Error', { status: 500 });
+                    }
+                    const file = Bun.file(resolvedPath);
                     if (errorCode === '404') set.status = 404;
                     if (errorCode === '500') set.status = 500;
                     return new Response(file);
