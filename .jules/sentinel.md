@@ -2,3 +2,7 @@
 **Vulnerability:** Prototype pollution vector found in `src/lib/parser.ts` where arbitrary keys parsed from the configuration format (like `__proto__`, `constructor`, `prototype`) could be assigned directly to object structures (`config` or `currentBlock`).
 **Learning:** Because the parser maps configuration keys to Javascript object properties natively without sanitization, malicious blocks or assignments allow attackers to pollute the global Object prototype context across the Node/Bun environment.
 **Prevention:** Explicit validation must be enforced on all dynamic key variables fetched from token streams before they are used as object properties to ensure they are not reserved Javascript metaproperties.
+## 2024-05-23 - [Path Traversal in Filesystem Integrations]
+**Vulnerability:** Path traversal vector found in \`src/index.ts\` where dynamic paths for error boundaries, static directories, and logger files were passed directly to \`Bun.file\` and \`Bun.write\` without restricting them to the project directory, allowing access to out-of-bounds files like \`/etc/passwd\`.
+**Learning:** Because Bun's native filesystem functions accept raw paths, unsanitized relative sequences (\`../\`) or absolute paths provided via configurations can escape the current working directory boundary.
+**Prevention:** Explicit path normalization and sanitization using \`safeJoin\` (resolving against \`process.cwd()\`) must be applied to all dynamic filesystem paths to ensure they strictly reside within the intended base directory before passing them to execution layers.
