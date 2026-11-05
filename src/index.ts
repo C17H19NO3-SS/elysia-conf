@@ -5,7 +5,17 @@ import { cors } from '@elysiajs/cors';
 import { rateLimit } from 'elysia-rate-limit';
 import { helmet } from 'elysia-helmet';
 import { parseConfig } from './lib/parser';
-import { join } from 'path';
+import { join, normalize, sep, resolve } from 'path';
+
+function safeJoin(baseDir: string, safeRoute: string): string {
+    const sanitized = safeRoute.replace(/^[\/\\]+/, '');
+    const safePath = normalize(sanitized).replace(/^(\.\.(\/|\\|$))+/, '');
+    const resolvedPath = resolve(baseDir, safePath);
+    if (!resolvedPath.startsWith(baseDir + sep) && resolvedPath !== baseDir) {
+        throw new Error('Directory traversal attempt detected');
+    }
+    return resolvedPath;
+}
 
 // Kullanıcıların kendi TypeScript projelerinde kullanabilmesi için Tipleri dışa aktarıyoruz
 export interface StaticConfigOptions {
@@ -71,9 +81,14 @@ export function elysiaCustomStatic(configText: string) {
             if (config.logger?.level) {
                 const logData = `[${new Date().toISOString()}] ${request.method} ${request.url}\n`;
                 if (config.logger.file) {
-                    Bun.write(config.logger.file, logData, { append: true }).catch(err => {
-                        console.error('Log file write error:', err);
-                    });
+                    try {
+                        const safeLogFile = safeJoin(process.cwd(), config.logger.file);
+                        Bun.write(safeLogFile, logData, { append: true }).catch(err => {
+                            console.error('Log file write error:', err);
+                        });
+                    } catch (err) {
+                        console.error('Security Error in logger path:', err);
+                    }
                 } else {
                     console.log(logData.trim());
                 }
@@ -83,9 +98,18 @@ export function elysiaCustomStatic(configText: string) {
 
     // Static Assets & MIME Types
     if (config.static) {
+        let safeAssetsDir = 'public';
+        if (config.static?.dir) {
+            try {
+                safeAssetsDir = safeJoin(process.cwd(), config.static.dir);
+            } catch (err) {
+                console.error('Security Error in static dir path:', err);
+            }
+        }
+
         app = app.use(
             staticPlugin({
-                assets: config.static?.dir || 'public',
+                assets: safeAssetsDir,
                 prefix: config.static?.route || '/static',
                 alwaysStatic: config.env === 'production',
                 noCache: !config.static?.cache,
@@ -161,7 +185,8 @@ export function elysiaCustomStatic(configText: string) {
             const errorFile = config.errors?.[errorCode];
             if (errorFile) {
                 try {
-                    const file = Bun.file(errorFile);
+                    const safeErrorFile = safeJoin(process.cwd(), errorFile);
+                    const file = Bun.file(safeErrorFile);
                     if (errorCode === '404') set.status = 404;
                     if (errorCode === '500') set.status = 500;
                     return new Response(file);
