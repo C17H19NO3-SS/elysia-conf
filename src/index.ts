@@ -5,7 +5,16 @@ import { cors } from '@elysiajs/cors';
 import { rateLimit } from 'elysia-rate-limit';
 import { helmet } from 'elysia-helmet';
 import { parseConfig } from './lib/parser';
-import { join } from 'path';
+import { join, resolve, sep } from 'path';
+
+function getSafePath(userInput: string): string {
+    const baseDir = process.cwd();
+    const resolvedPath = resolve(baseDir, userInput);
+    if (!resolvedPath.startsWith(resolve(baseDir) + sep) && resolvedPath !== resolve(baseDir)) {
+        throw new Error('Directory traversal attempt detected');
+    }
+    return resolvedPath;
+}
 
 // Kullanıcıların kendi TypeScript projelerinde kullanabilmesi için Tipleri dışa aktarıyoruz
 export interface StaticConfigOptions {
@@ -71,9 +80,14 @@ export function elysiaCustomStatic(configText: string) {
             if (config.logger?.level) {
                 const logData = `[${new Date().toISOString()}] ${request.method} ${request.url}\n`;
                 if (config.logger.file) {
-                    Bun.write(config.logger.file, logData, { append: true }).catch(err => {
+                    try {
+                        const safePath = getSafePath(config.logger.file);
+                        Bun.write(safePath, logData, { append: true }).catch(err => {
+                            console.error('Log file write error:', err);
+                        });
+                    } catch (err) {
                         console.error('Log file write error:', err);
-                    });
+                    }
                 } else {
                     console.log(logData.trim());
                 }
@@ -161,7 +175,8 @@ export function elysiaCustomStatic(configText: string) {
             const errorFile = config.errors?.[errorCode];
             if (errorFile) {
                 try {
-                    const file = Bun.file(errorFile);
+                    const safePath = getSafePath(errorFile);
+                    const file = Bun.file(safePath);
                     if (errorCode === '404') set.status = 404;
                     if (errorCode === '500') set.status = 500;
                     return new Response(file);
